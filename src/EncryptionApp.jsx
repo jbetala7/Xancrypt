@@ -64,14 +64,14 @@ export default function EncryptionApp() {
     }, 200);
 
     try {
-      const response = await fetch('http://localhost:4000/api/encrypt', {
+      const response = await fetch('/api/encrypt', {
         method: 'POST',
         body: formData,
       });
 
       const data = await response.json();
       if (data.downloadLink) {
-        const downloadURL = `http://localhost:4000${data.downloadLink}`;
+        const downloadURL = data.downloadLink;
         setResultLink(downloadURL);
 
         const timestamp = new Date().toLocaleString();
