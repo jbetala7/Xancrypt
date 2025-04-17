@@ -3,8 +3,8 @@ const multer = require('multer');
 const fs = require('fs-extra');
 const path = require('path');
 const archiver = require('archiver');
-const minifyCSS = require('../minifycss'); // ✅ All lowercase
-const obfuscateJS = require('../obfuscatejs'); // ✅ All lowercase
+const minifyCSS = require('../minifycss.js'); // ✅ All lowercase
+const obfuscateJS = require('../obfuscatejs.js'); // ✅ All lowercase
 
 
 const router = express.Router();
