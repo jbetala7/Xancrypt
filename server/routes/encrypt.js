@@ -3,8 +3,8 @@ const multer = require('multer');
 const fs = require('fs-extra');
 const path = require('path');
 const archiver = require('archiver');
-const minifyCSS = require('../tasks/minifyCSS');
-const obfuscateJS = require('../tasks/obfuscateJS');
+const minifyCSS = require('./tasks/minifyCSS');
+const obfuscateJS = require('./tasks/obfuscateJS');
 
 const router = express.Router();
 const upload = multer({ dest: 'uploads/' });
