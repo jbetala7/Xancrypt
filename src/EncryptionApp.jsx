@@ -64,10 +64,10 @@ export default function EncryptionApp() {
     }, 200);
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/encrypt`, {
+      const response = await fetch('https://xancrypt-api.onrender.com/api/encrypt', {
         method: 'POST',
         body: formData,
-      });
+      });      
 
       const data = await response.json();
       if (data.downloadLink) {
