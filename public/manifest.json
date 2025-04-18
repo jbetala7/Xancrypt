@@ -1,7 +1,7 @@
 {
   "short_name": "Xancrypt",
   "name": "Xancrypt",
-  "description": "A web application for encryption and decryption of files.",
+  "description": "A web application for encryption of CSS and JS files.",
   "icons": [
     {
       "src": "favicon.ico",
