@@ -9,6 +9,7 @@ const obfuscateJS = require('../tasks/obfuscateJS.js');
 const router = express.Router();
 const upload = multer({ dest: 'uploads/' });
 
+// POST /api/encrypt
 router.post('/', upload.fields([{ name: 'css' }, { name: 'js' }]), async (req, res) => {
   try {
     const timestamp = Date.now();
@@ -31,52 +32,41 @@ router.post('/', upload.fields([{ name: 'css' }, { name: 'js' }]), async (req, r
     if (req.files?.css) await minifyCSS(uploadDir, outputDir);
     if (req.files?.js) await obfuscateJS(uploadDir, outputDir);
 
-    const archiveFormat = req.body.format || 'zip';
-    const userFilename = (req.body.name || 'encrypted-files').trim().replace(/[^a-z0-9-_]/gi, '_');
-    const archiveName = `${timestamp}.${archiveFormat}`;
+    const format = req.body.format || 'zip';
+    const safeName = (req.body.name || 'encrypted-files').trim().replace(/[^a-z0-9-_]/gi, '_');
+    const archiveName = `${timestamp}.${format}`;
     const archivePath = path.join(__dirname, '..', 'output', archiveName);
 
-    const archive = archiver(
-      archiveFormat === 'tar.gz' ? 'tar' : 'zip',
-      {
-        zlib: { level: 9 },
-        gzip: archiveFormat === 'tar.gz'
-      }
-    );
-
     const output = fs.createWriteStream(archivePath);
-
-    archive.pipe(output);
-    archive.directory(outputDir, false);
-
-    archive.on('error', (err) => {
-      console.error('Archive error:', err);
-      return res.status(500).json({ error: 'Failed to create archive.' });
+    const archive = archiver(format === 'zip' ? 'zip' : 'tar', {
+      zlib: { level: 9 },
+      gzip: format === 'tar.gz',
     });
+
+    archive.directory(outputDir, false);
+    archive.pipe(output);
 
     output.on('close', () => {
-      if (fs.existsSync(archivePath)) {
-        return res.json({
-          downloadLink: `/download/${archiveName}?name=${userFilename}.${archiveFormat}`
-        });
-      } else {
-        return res.status(500).json({ error: 'Archive file was not created.' });
-      }
+      // ✅ Only respond AFTER archive has fully written
+      res.json({
+        downloadLink: `/download/${archiveName}?name=${safeName}.${format}`,
+      });
     });
 
-    output.on('error', (err) => {
-      console.error('Write stream error:', err);
-      return res.status(500).json({ error: 'Failed to write archive.' });
+    archive.on('error', (err) => {
+      console.error('Archiving error:', err);
+      res.status(500).json({ error: 'Failed to create archive' });
     });
 
-    await archive.finalize();
+    await archive.finalize(); // 🔒 ensures archiving is fully finished
 
   } catch (err) {
     console.error('Encryption error:', err);
-    return res.status(500).json({ error: 'Encryption failed' });
+    res.status(500).json({ error: 'Encryption failed' });
   }
 });
 
+// GET /download/:filename
 router.get('/download/:filename', (req, res) => {
   const filePath = path.join(__dirname, '..', 'output', req.params.filename);
   const displayName = req.query.name || req.params.filename;
