@@ -46,10 +46,16 @@ router.post('/', upload.fields([{ name: 'css' }, { name: 'js' }]), async (req, r
 
     const output = fs.createWriteStream(archivePath);
 
+    // Properly wait for stream to finish writing before sending response
     output.on('close', () => {
       return res.json({
         downloadLink: `/download/${archiveName}?name=${userFilename}.${archiveFormat}`
       });
+    });
+
+    output.on('error', (err) => {
+      console.error('Write stream error:', err);
+      return res.status(500).json({ error: 'Failed to write archive.' });
     });
 
     archive.on('error', (err) => {
@@ -59,7 +65,7 @@ router.post('/', upload.fields([{ name: 'css' }, { name: 'js' }]), async (req, r
 
     archive.pipe(output);
     archive.directory(outputDir, false);
-    await archive.finalize(); // wait for completion
+    archive.finalize(); // this kicks off the archive process (not awaitable here directly)
 
   } catch (err) {
     console.error('Encryption error:', err);
