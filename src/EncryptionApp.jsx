@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { toast } from 'react-hot-toast';
 
+const BACKEND_URL = 'https://xancrypt-api.onrender.com';
+
 const Button = ({ children, ...props }) => (
   <button
     {...props}
@@ -50,6 +52,7 @@ export default function EncryptionApp() {
     cssFiles.forEach(file => formData.append('css', file));
     jsFiles.forEach(file => formData.append('js', file));
     formData.append('format', archiveFormat);
+    formData.append('name', baseFilename);
 
     setIsProcessing(true);
     setResultLink(null);
@@ -64,14 +67,14 @@ export default function EncryptionApp() {
     }, 200);
 
     try {
-      const response = await fetch('https://xancrypt-api.onrender.com/api/encrypt', {
+      const response = await fetch(`${BACKEND_URL}/api/encrypt`, {
         method: 'POST',
         body: formData,
-      });      
+      });
 
       const data = await response.json();
       if (data.downloadLink) {
-        const downloadURL = data.downloadLink;
+        const downloadURL = `${BACKEND_URL}${data.downloadLink}`;
         setResultLink(downloadURL);
 
         const timestamp = new Date().toLocaleString();
@@ -197,9 +200,7 @@ export default function EncryptionApp() {
           className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-black dark:text-white px-3 py-2 rounded"
         >
           {formats.map((f) => (
-            <option key={f} value={f}>
-              .{f}
-            </option>
+            <option key={f} value={f}>.{f}</option>
           ))}
         </select>
       </div>
