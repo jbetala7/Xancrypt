@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const encryptRoute = require('./routes/encrypt');
 
 const app = express();
@@ -11,19 +12,21 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ Use encrypt route only once
+// Routes
 app.use('/api/encrypt', encryptRoute);
 
-// ✅ Serve frontend static React build
+// Serve frontend
 const clientBuildPath = path.join(__dirname, '..', 'build');
 app.use(express.static(clientBuildPath));
 
-// ✅ Fallback for SPA routing
-app.get('*', (req, res) => {
-  res.sendFile(path.join(clientBuildPath, 'index.html'));
+// Safe SPA fallback
+app.get('*', (req, res, next) => {
+  const indexPath = path.join(clientBuildPath, 'index.html');
+  fs.existsSync(indexPath)
+    ? res.sendFile(indexPath)
+    : next();
 });
 
-// Start server
 app.listen(PORT, () => {
-  console.log(`✅ Server running on http://localhost:${PORT}`);
+  console.log(`✅ Server running at http://localhost:${PORT}`);
 });
