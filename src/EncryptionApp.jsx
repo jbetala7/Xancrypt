@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { toast } from 'react-hot-toast';
 
-const BACKEND_URL = 'https://xancrypt-api.onrender.com';
+const BACKEND_URL = process.env.REACT_APP_API_URL || 'http://localhost:4000';
 
 const Button = ({ children, ...props }) => (
   <button
