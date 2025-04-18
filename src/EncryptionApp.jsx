@@ -272,9 +272,11 @@ export default function EncryptionApp() {
                 <div><strong>CSS:</strong> {entry.cssCount}, <strong>JS:</strong> {entry.jsCount}</div>
                 <div>
                   <a
-                    href={entry.link}
-                    download={entry.filename}
-                    onClick={() => toast.success(`Download started: ${entry.filename}`)}
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      downloadFile(entry.link, entry.filename);
+                    }}
                     className="text-blue-500 underline"
                   >
                     ⬇️ Download {entry.filename}

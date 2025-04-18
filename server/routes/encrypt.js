@@ -46,11 +46,22 @@ router.post('/', upload.fields([{ name: 'css' }, { name: 'js' }]), async (req, r
 
     const output = fs.createWriteStream(archivePath);
 
-    // Properly wait for stream to finish writing before sending response
+    archive.pipe(output);
+    archive.directory(outputDir, false);
+
+    archive.on('error', (err) => {
+      console.error('Archive error:', err);
+      return res.status(500).json({ error: 'Failed to create archive.' });
+    });
+
     output.on('close', () => {
-      return res.json({
-        downloadLink: `/download/${archiveName}?name=${userFilename}.${archiveFormat}`
-      });
+      if (fs.existsSync(archivePath)) {
+        return res.json({
+          downloadLink: `/download/${archiveName}?name=${userFilename}.${archiveFormat}`
+        });
+      } else {
+        return res.status(500).json({ error: 'Archive file was not created.' });
+      }
     });
 
     output.on('error', (err) => {
@@ -58,14 +69,7 @@ router.post('/', upload.fields([{ name: 'css' }, { name: 'js' }]), async (req, r
       return res.status(500).json({ error: 'Failed to write archive.' });
     });
 
-    archive.on('error', (err) => {
-      console.error('Archive error:', err);
-      return res.status(500).json({ error: 'Failed to create archive.' });
-    });
-
-    archive.pipe(output);
-    archive.directory(outputDir, false);
-    archive.finalize(); // this kicks off the archive process (not awaitable here directly)
+    await archive.finalize();
 
   } catch (err) {
     console.error('Encryption error:', err);
