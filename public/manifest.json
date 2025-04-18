@@ -1,6 +1,7 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "Xancrypt",
+  "name": "Xancrypt",
+  "description": "A web application for encryption and decryption of files.",
   "icons": [
     {
       "src": "favicon.ico",
