@@ -6,12 +6,12 @@
   "scripts": {
     "start": "node server.js"
   },
-  "engines": {
-    "node": ">=16.0.0"
-  },
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "dependencies": {
     "archiver": "^7.0.1",
     "cors": "^2.8.5",
