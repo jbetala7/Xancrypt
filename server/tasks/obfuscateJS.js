@@ -7,10 +7,13 @@ function obfuscateJS(input, output) {
     gulp.src(`${input}/*.js`)
       .pipe(obfuscator({
         compact: true,
-        controlFlowFlattening: true,
-        deadCodeInjection: true,
+        identifierNamesGenerator: 'hexadecimal',
+        rotateStringArray: true,
         stringArray: true,
-        selfDefending: true,
+        stringArrayThreshold: 0.75,
+        selfDefending: false,
+        controlFlowFlattening: false,
+        deadCodeInjection: false
       }))
       .pipe(rename({ suffix: '.obf' }))
       .pipe(gulp.dest(output))
