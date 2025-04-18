@@ -9,33 +9,12 @@ const obfuscateJS = require('../tasks/obfuscateJS.js');
 const router = express.Router();
 const upload = multer({ dest: 'uploads/' });
 
-// Utility: Create archive and resolve when finished
-const createArchive = (outputDir, archivePath, format) => {
-  return new Promise((resolve, reject) => {
-    const output = fs.createWriteStream(archivePath);
-    const archive = archiver(
-      format === 'zip' ? 'zip' : 'tar',
-      {
-        zlib: { level: 9 },
-        gzip: format === 'tar.gz'
-      }
-    );
-
-    output.on('close', resolve);
-    archive.on('error', reject);
-
-    archive.pipe(output);
-    archive.directory(outputDir, false);
-    archive.finalize();
-  });
-};
-
-// POST /api/encrypt
 router.post('/', upload.fields([{ name: 'css' }, { name: 'js' }]), async (req, res) => {
   try {
     const timestamp = Date.now();
     const uploadDir = path.join(__dirname, '..', 'uploads', String(timestamp));
     const outputDir = path.join(__dirname, '..', 'output', String(timestamp));
+
     await fs.ensureDir(uploadDir);
     await fs.ensureDir(outputDir);
 
@@ -57,19 +36,37 @@ router.post('/', upload.fields([{ name: 'css' }, { name: 'js' }]), async (req, r
     const archiveName = `${timestamp}.${archiveFormat}`;
     const archivePath = path.join(__dirname, '..', 'output', archiveName);
 
-    await createArchive(outputDir, archivePath, archiveFormat);
+    const archive = archiver(
+      archiveFormat === 'tar.gz' ? 'tar' : 'zip',
+      {
+        zlib: { level: 9 },
+        gzip: archiveFormat === 'tar.gz'
+      }
+    );
 
-    res.json({
-      downloadLink: `/download/${archiveName}?name=${userFilename}.${archiveFormat}`
+    const output = fs.createWriteStream(archivePath);
+
+    output.on('close', () => {
+      return res.json({
+        downloadLink: `/download/${archiveName}?name=${userFilename}.${archiveFormat}`
+      });
     });
+
+    archive.on('error', (err) => {
+      console.error('Archive error:', err);
+      return res.status(500).json({ error: 'Failed to create archive.' });
+    });
+
+    archive.pipe(output);
+    archive.directory(outputDir, false);
+    await archive.finalize(); // wait for completion
 
   } catch (err) {
     console.error('Encryption error:', err);
-    res.status(500).json({ error: 'Encryption failed' });
+    return res.status(500).json({ error: 'Encryption failed' });
   }
 });
 
-// GET /download/:filename
 router.get('/download/:filename', (req, res) => {
   const filePath = path.join(__dirname, '..', 'output', req.params.filename);
   const displayName = req.query.name || req.params.filename;
