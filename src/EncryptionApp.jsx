@@ -1,3 +1,5 @@
+// src/EncryptionApp.jsx
+
 import React, { useState, useRef } from 'react';
 import { toast } from 'react-hot-toast';
 
@@ -5,6 +7,7 @@ const BACKEND_URL = process.env.REACT_APP_API_URL || 'http://localhost:4000';
 
 const Button = ({ children, ...props }) => (
   <button
+    type="button"
     {...props}
     className={`bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded disabled:opacity-50 ${props.className}`}
   >
@@ -17,6 +20,7 @@ export default function EncryptionApp() {
   const [jsFiles, setJsFiles] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [resultLink, setResultLink] = useState(null);
+  const [elapsedSec, setElapsedSec] = useState(null);
   const [progress, setProgress] = useState(0);
   const [archiveFormat, setArchiveFormat] = useState('zip');
   const [baseFilename, setBaseFilename] = useState('encrypted-files');
@@ -35,47 +39,53 @@ export default function EncryptionApp() {
 
   const handleFileDrop = (e, type) => {
     preventDefaults(e);
-    const droppedFiles = Array.from(e.dataTransfer.files).filter(file =>
+    const dropped = Array.from(e.dataTransfer.files).filter(file =>
       type === 'css' ? file.name.endsWith('.css') : file.name.endsWith('.js')
     );
-    if (type === 'css') setCssFiles(prev => [...prev, ...droppedFiles]);
-    else if (type === 'js') setJsFiles(prev => [...prev, ...droppedFiles]);
+    if (type === 'css') setCssFiles(prev => [...prev, ...dropped]);
+    else setJsFiles(prev => [...prev, ...dropped]);
   };
 
   const handleSubmit = async () => {
-    if (cssFiles.length === 0 && jsFiles.length === 0) {
+    if (!cssFiles.length && !jsFiles.length) {
       toast.error('Please upload at least one file.');
       return;
     }
 
     const formData = new FormData();
-    cssFiles.forEach(file => formData.append('css', file));
-    jsFiles.forEach(file => formData.append('js', file));
+    cssFiles.forEach(f => formData.append('css', f));
+    jsFiles.forEach(f  => formData.append('js', f));
     formData.append('format', archiveFormat);
     formData.append('name', baseFilename);
 
     setIsProcessing(true);
     setResultLink(null);
+    setElapsedSec(null);
     setProgress(0);
     toast.loading('Encrypting files...');
 
-    let p = 0;
     const interval = setInterval(() => {
-      p += Math.random() * 10;
-      if (p >= 95) clearInterval(interval);
-      else setProgress(Math.min(95, Math.round(p)));
+      setProgress(p => {
+        const next = p + Math.random() * 10;
+        if (next >= 95) {
+          clearInterval(interval);
+          return 95;
+        }
+        return Math.round(next);
+      });
     }, 200);
 
     try {
-      const response = await fetch(`${BACKEND_URL}/api/encrypt`, {
+      const resp = await fetch(`${BACKEND_URL}/api/encrypt`, {
         method: 'POST',
         body: formData,
       });
+      const data = await resp.json();
 
-      const data = await response.json();
       if (data.downloadLink) {
         const downloadURL = `${BACKEND_URL}${data.downloadLink}`;
         setResultLink(downloadURL);
+        setElapsedSec(data.elapsedSec);
 
         const timestamp = new Date().toLocaleString();
         setFileHistory(prev => [
@@ -83,6 +93,7 @@ export default function EncryptionApp() {
             timestamp,
             cssCount: cssFiles.length,
             jsCount: jsFiles.length,
+            elapsedSec: data.elapsedSec,
             link: downloadURL,
             filename: fullFilename,
           },
@@ -99,9 +110,7 @@ export default function EncryptionApp() {
       console.error(err);
       setProgress(0);
     } finally {
-      setTimeout(() => {
-        setIsProcessing(false);
-      }, 300);
+      setTimeout(() => setIsProcessing(false), 300);
     }
   };
 
@@ -130,16 +139,15 @@ export default function EncryptionApp() {
     setCssFiles([]);
     setJsFiles([]);
     setResultLink(null);
+    setElapsedSec(null);
     setProgress(0);
     setBaseFilename('encrypted-files');
-
     if (cssInputRef.current) cssInputRef.current.value = '';
     if (jsInputRef.current) jsInputRef.current.value = '';
-
     toast('Form cleared.', { icon: '🧹' });
   };
 
-  const hasFiles = cssFiles.length > 0 || jsFiles.length > 0;
+  const hasFiles = cssFiles.length || jsFiles.length;
 
   return (
     <div className="space-y-6">
@@ -193,7 +201,9 @@ export default function EncryptionApp() {
 
       {/* Format Dropdown */}
       <div>
-        <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Archive Format</label>
+        <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
+          Archive Format
+        </label>
         <select
           value={archiveFormat}
           onChange={(e) => setArchiveFormat(e.target.value)}
@@ -207,7 +217,9 @@ export default function EncryptionApp() {
 
       {/* Base File Name Input */}
       <div>
-        <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">File name</label>
+        <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
+          File Name
+        </label>
         <div className="flex">
           <input
             type="text"
@@ -222,12 +234,10 @@ export default function EncryptionApp() {
         </div>
       </div>
 
-      {/* Encrypt Button */}
+      {/* Encrypt & Clear Buttons */}
       <Button onClick={handleSubmit} disabled={isProcessing} className="w-full">
         {isProcessing ? 'Processing...' : 'Encrypt Files'}
       </Button>
-
-      {/* Clear Form Button */}
       <Button
         onClick={handleClear}
         disabled={isProcessing || (!hasFiles && !resultLink)}
@@ -242,21 +252,29 @@ export default function EncryptionApp() {
           <div
             className="absolute top-0 left-0 h-full bg-blue-600 transition-all duration-200"
             style={{ width: `${progress}%` }}
-          ></div>
+          />
           <div className="absolute inset-0 flex items-center justify-center text-xs font-medium text-white">
             {progress}%
           </div>
         </div>
       )}
 
+      {/* Elapsed Time Display */}
+      {elapsedSec !== null && (
+        <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
+          ⏱️ Encryption took <strong>{elapsedSec} s</strong>
+        </p>
+      )}
+
       {/* Download Link */}
       {resultLink && (
         <div className="text-center mt-4">
           <button
+            type="button"
             onClick={() => downloadFile(resultLink, fullFilename)}
             className="text-blue-400 underline text-sm"
           >
-            📦 Download Encrypted Files
+            📦 Download {fullFilename}
           </button>
         </div>
       )}
@@ -264,23 +282,23 @@ export default function EncryptionApp() {
       {/* File History */}
       {fileHistory.length > 0 && (
         <div className="mt-6">
-          <h2 className="text-lg font-semibold mb-2 text-white dark:text-white">📜 File History</h2>
+          <h2 className="text-lg font-semibold mb-2 text-white dark:text-white">
+            📜 File History
+          </h2>
           <ul className="space-y-2 text-sm text-gray-700 dark:text-gray-200">
             {fileHistory.map((entry, i) => (
               <li key={i} className="border p-3 rounded bg-gray-100 dark:bg-gray-800">
                 <div><strong>Uploaded:</strong> {entry.timestamp}</div>
                 <div><strong>CSS:</strong> {entry.cssCount}, <strong>JS:</strong> {entry.jsCount}</div>
+                <div><strong>Time:</strong> {entry.elapsedSec} s</div>
                 <div>
-                  <a
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      downloadFile(entry.link, entry.filename);
-                    }}
-                    className="text-blue-500 underline"
+                  <button
+                    type="button"
+                    onClick={() => downloadFile(entry.link, entry.filename)}
+                    className="text-blue-500 underline text-sm"
                   >
                     ⬇️ Download {entry.filename}
-                  </a>
+                  </button>
                 </div>
               </li>
             ))}

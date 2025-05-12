@@ -1,80 +1,104 @@
+// routes/encrypt.js
+
 const express = require('express');
 const multer = require('multer');
 const fs = require('fs-extra');
 const path = require('path');
 const archiver = require('archiver');
+const zlib = require('zlib');
 const minifyCSS = require('../tasks/minifyCSS');
 const obfuscateJS = require('../tasks/obfuscateJS');
 
 const router = express.Router();
 const upload = multer({ dest: 'uploads/' });
 
-// POST /api/encrypt
-router.post('/', upload.fields([{ name: 'css' }, { name: 'js' }]), async (req, res) => {
-  const timestamp = Date.now();
-  const uploadDir = path.join(__dirname, '..', 'uploads', String(timestamp));
-  const outputDir = path.join(__dirname, '..', 'output', String(timestamp));
+router.post(
+  '/',
+  upload.fields([{ name: 'css' }, { name: 'js' }]),
+  async (req, res) => {
+    // start high-resolution timer
+    const startTime = process.hrtime();
 
-  try {
-    await fs.ensureDir(uploadDir);
-    await fs.ensureDir(outputDir);
+    // unique timestamp for this job
+    const timestamp = Date.now();
+    const uploadDir = path.join(__dirname, '..', 'uploads', String(timestamp));
+    const outputDir = path.join(__dirname, '..', 'output');
 
-    const moveFiles = async (files) => {
-      for (const file of files) {
-        const destPath = path.join(uploadDir, file.originalname);
-        await fs.move(file.path, destPath, { overwrite: true });
-      }
-    };
+    try {
+      // ensure directories exist
+      await fs.ensureDir(uploadDir);
+      await fs.ensureDir(outputDir);
 
-    if (req.files?.css) await moveFiles(req.files.css);
-    if (req.files?.js) await moveFiles(req.files.js);
-
-    if (req.files?.css) await minifyCSS(uploadDir, outputDir);
-    if (req.files?.js) await obfuscateJS(uploadDir, outputDir);
-
-    const userFilename = (req.body.name || 'encrypted-files').trim().replace(/[^a-z0-9-_]/gi, '_');
-    const archiveName = `${timestamp}.zip`;
-    const archivePath = path.join(__dirname, '..', 'output', archiveName);
-
-    // Create archive and pipe to file
-    const output = fs.createWriteStream(archivePath);
-    const archive = archiver('zip', { zlib: { level: 9 } });
-    archive.pipe(output);
-    archive.directory(outputDir, false);
-
-    archive.finalize();
-
-    // Wait for it to fully finish writing before sending response
-    output.on('close', () => {
-      console.log(`✅ ZIP archive ${archiveName} finalized. Size: ${archive.pointer()} bytes`);
-      // Ensure the file really exists and is fully written
-      fs.pathExists(archivePath).then(exists => {
-        if (exists) {
-          res.json({ downloadLink: `/download/${archiveName}?name=${userFilename}.zip` });
-        } else {
-          res.status(500).json({ error: 'ZIP file not found after creation' });
+      // move uploaded files into the timestamped folder
+      const moveFiles = async (files) => {
+        for (const file of files) {
+          const dest = path.join(uploadDir, file.originalname);
+          await fs.move(file.path, dest, { overwrite: true });
         }
+      };
+      if (req.files?.css) await moveFiles(req.files.css);
+      if (req.files?.js) await moveFiles(req.files.js);
+
+      // process CSS and JS in parallel
+      const [cssResults, jsResults] = await Promise.all([
+        req.files?.css ? minifyCSS(uploadDir) : Promise.resolve([]),
+        req.files?.js ? obfuscateJS(uploadDir) : Promise.resolve([])
+      ]);
+
+      // sanitize user-provided filename
+      const userFilename = (req.body.name || 'encrypted-files')
+        .trim()
+        .replace(/[^a-z0-9-_]/gi, '_');
+      const archiveName = `${timestamp}.zip`;
+      const archivePath = path.join(outputDir, archiveName);
+
+      // create ZIP with default (fast) compression
+      const output = fs.createWriteStream(archivePath);
+      const archive = archiver('zip', {
+        zlib: { level: zlib.constants.Z_DEFAULT_COMPRESSION }
       });
-    });
+      archive.pipe(output);
 
-    archive.on('error', (err) => {
-      console.error('❌ Archive error:', err);
-      res.status(500).json({ error: 'Failed to create ZIP archive' });
-    });
+      // append each in-memory result buffer
+      cssResults.forEach(f => archive.append(f.contents, { name: f.name }));
+      jsResults.forEach(f => archive.append(f.contents, { name: f.name }));
 
-  } catch (err) {
-    console.error('❌ Encryption error:', err);
-    res.status(500).json({ error: 'Encryption failed' });
+      // finalize archive
+      archive.finalize();
+
+      output.on('close', () => {
+        // calculate elapsed time in seconds with 2 decimal places
+        const [secs, nanos] = process.hrtime(startTime);
+        const elapsedSec = (secs + nanos / 1e9).toFixed(2);
+
+        console.log(`🚀 Encryption finished in ${elapsedSec} s`);
+
+        // respond with download link and elapsed time in seconds
+        res.json({
+          downloadLink: `/download/${archiveName}?name=${userFilename}.zip`,
+          elapsedSec: Number(elapsedSec)
+        });
+      });
+
+      archive.on('error', err => {
+        console.error('Archive error:', err);
+        res.status(500).json({ error: 'Failed to create ZIP archive' });
+      });
+    } catch (err) {
+      console.error('Encryption error:', err);
+      res.status(500).json({ error: 'Encryption failed' });
+    }
   }
-});
+);
 
-// GET /download/:filename
 router.get('/download/:filename', (req, res) => {
   const filePath = path.join(__dirname, '..', 'output', req.params.filename);
   const displayName = req.query.name || req.params.filename;
 
   if (fs.existsSync(filePath)) {
-    res.download(filePath, displayName); // ✅ Triggers download with renamed file
+    res.download(filePath, displayName, err => {
+      if (err) console.error('Download error:', err);
+    });
   } else {
     res.status(404).send('File not found');
   }

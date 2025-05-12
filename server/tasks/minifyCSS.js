@@ -1,16 +1,20 @@
-const gulp = require('gulp');
-const cleanCSS = require('gulp-clean-css');
-const rename = require('gulp-rename');
+const CleanCSS = require('clean-css');
+const fs = require('fs').promises;
+const path = require('path');
 
-function minifyCSS(input, output) {
-  return new Promise((resolve, reject) => {
-    gulp.src(`${input}/*.css`)
-      .pipe(cleanCSS())
-      .pipe(rename({ suffix: '.min' }))
-      .pipe(gulp.dest(output))
-      .on('end', resolve)
-      .on('error', reject);
-  });
-}
+module.exports = async function minifyCSS(inputDir) {
+  const cleaner = new CleanCSS();
+  const files = await fs.readdir(inputDir);
+  const cssFiles = files.filter(f => path.extname(f).toLowerCase() === '.css');
 
-module.exports = minifyCSS;
+  return Promise.all(cssFiles.map(async file => {
+    const filePath = path.join(inputDir, file);
+    const src = await fs.readFile(filePath, 'utf8');
+    const out = cleaner.minify(src).styles;
+
+    return {
+      name: file.replace(/\.css$/i, '.css'),
+      contents: Buffer.from(out, 'utf8')
+    };
+  }));
+};
