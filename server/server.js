@@ -27,7 +27,11 @@ const PORT = process.env.PORT || 4000;
 
 // ─── Global Middleware ─────────────────────────────────────────────────────────
 app.use((req, res, next) => { httpRequests.inc(); next(); });
-app.use(cors());
+// allow sending/receiving cookies from frontend
+app.use(cors({
+  origin: process.env.CLIENT_URL,
+  credentials: true
+}));
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -58,7 +62,7 @@ app.post(
 app.use('/api/auth', authRoute);
 app.use('/api/checkout', require('./middleware/authenticate'), checkoutRoute);
 app.use('/api/encrypt', encryptRoute);
-app.use('/admin', adminRoute);
+app.use('/api/admin', adminRoute);
 
 // ─── Prometheus ────────────────────────────────────────────────────────────────
 app.get('/metrics', async (req, res) => {

@@ -1,15 +1,49 @@
-// File: src/App.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import { FiMenu } from 'react-icons/fi';
 import EncryptionApp from './EncryptionApp';
+import AdminDashboard from './pages/AdminDashboard';
 import AuthPage from './pages/AuthPage';
 import logo from './logo.png';
 import { Toaster } from 'react-hot-toast';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('token'));
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  // On mount, check for existing token and attempt silent refresh
+  useEffect(() => {
+    const existing = localStorage.getItem('token');
+    if (existing) {
+      setIsLoggedIn(true);
+    }
+
+    fetch(`${process.env.REACT_APP_API_URL}/api/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include', // send refreshToken cookie
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.token) {
+          localStorage.setItem('token', data.token);
+          setIsLoggedIn(true);
+        }
+      })
+      .catch(() => {
+        // no-op if refresh fails
+      });
+  }, []);
+
+  const handleLogout = () => {
+    fetch(`${process.env.REACT_APP_API_URL}/api/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+    }).finally(() => {
+      localStorage.removeItem('token');
+      setIsLoggedIn(false);
+      window.location.href = '/auth?loggedout=1';
+    });
+  };
 
   return (
     <Router>
@@ -33,11 +67,7 @@ export default function App() {
 
               {isLoggedIn ? (
                 <button
-                  onClick={() => {
-                    localStorage.removeItem('token');
-                    setIsLoggedIn(false);
-                    window.location.href = '/auth?loggedout=1';
-                  }}
+                  onClick={handleLogout}
                   className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm"
                 >
                   Logout
@@ -50,6 +80,10 @@ export default function App() {
                   Login
                 </Link>
               )}
+              <Link to="/admin" className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded">
+                Admin
+              </Link>
+
 
               <button className="p-2 hover:bg-gray-800 rounded">
                 <FiMenu className="h-6 w-6" />
@@ -67,12 +101,37 @@ export default function App() {
         />
 
         <main className="min-h-screen bg-[#f9fafb] dark:bg-[#1e293b] text-black dark:text-white px-4 py-10">
-          <div className="max-w-xl mx-auto rounded-xl p-6 bg-white dark:bg-[#273549] shadow-lg">
-            <Routes>
-              <Route path="/" element={<EncryptionApp />} />
-              <Route path="/auth" element={<AuthPage setIsLoggedIn={setIsLoggedIn} />} />
-            </Routes>
-          </div>
+          <Routes>
+            {/* ADMIN: full-width container */}
+            <Route
+              path="/admin"
+              element={
+                <div className="mx-auto max-w-full p-6 bg-white dark:bg-[#273549] shadow-lg">
+                  <AdminDashboard />
+                </div>
+              }
+            />
+
+            {/* AUTH (login/signup) */}
+            <Route
+              path="/auth"
+              element={
+                <div className="mx-auto max-w-xl rounded-xl p-6 bg-white dark:bg-[#273549] shadow-lg">
+                  <AuthPage setIsLoggedIn={setIsLoggedIn} />
+                </div>
+              }
+            />
+
+            {/* HOME / ENCRYPT */}
+            <Route
+              path="/"
+              element={
+                <div className="mx-auto max-w-xl rounded-xl p-6 bg-white dark:bg-[#273549] shadow-lg">
+                  <EncryptionApp />
+                </div>
+              }
+            />
+          </Routes>
         </main>
       </div>
     </Router>

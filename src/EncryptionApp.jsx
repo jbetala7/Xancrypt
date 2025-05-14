@@ -54,9 +54,30 @@ export default function EncryptionApp() {
 
     const formData = new FormData();
     cssFiles.forEach(f => formData.append('css', f));
-    jsFiles.forEach(f  => formData.append('js', f));
+    jsFiles.forEach(f => formData.append('js', f));
     formData.append('format', archiveFormat);
     formData.append('name', baseFilename);
+
+    // Device ID tracking for rate limiting
+    const deviceId = (() => {
+      let id = localStorage.getItem('deviceId');
+      if (!id) {
+        id = crypto.randomUUID();
+        localStorage.setItem('deviceId', id);
+      }
+      return id;
+    })();
+    console.log('📦 deviceId being sent:', deviceId);
+    formData.append('deviceId', deviceId);
+
+    // Build headers
+    const headers = {};
+    const token = localStorage.getItem('token');
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    // x-test-ip for dev spoofing; change as needed
+    headers['x-test-ip'] = '192.168.88.103';
 
     setIsProcessing(true);
     setResultLink(null);
@@ -78,8 +99,18 @@ export default function EncryptionApp() {
     try {
       const resp = await fetch(`${BACKEND_URL}/api/encrypt`, {
         method: 'POST',
+        headers,
         body: formData,
       });
+
+      if (resp.status === 429) {
+        const data = await resp.json();
+        const wait = new Date(data.nextAllowed).toLocaleTimeString();
+        toast.error(`Free limit of 5 files reached. Try again at ${wait} or upgrade.`);
+        setIsProcessing(false);
+        return;
+      }
+
       const data = await resp.json();
 
       if (data.downloadLink) {

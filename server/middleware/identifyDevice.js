@@ -1,12 +1,9 @@
-const { v4: uuidv4 } = require('uuid');
-const DeviceUsage    = require('../models/DeviceUsage');
+// server/middleware/identifyDevice.js
 
 module.exports = function identifyDevice(req, res, next) {
-  let deviceId = req.cookies.deviceId;
+  const deviceId = req.body.deviceId || req.headers['x-device-id'];
   if (!deviceId) {
-    deviceId = uuidv4();
-    // httpOnly so front-end JS can’t steal it
-    res.cookie('deviceId', deviceId, { httpOnly: true, maxAge: 365*24*60*60*1000 });
+    return res.status(400).json({ error: 'Missing device ID' });
   }
   req.deviceId = deviceId;
   next();

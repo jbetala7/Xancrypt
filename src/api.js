@@ -4,7 +4,7 @@ export const BACKEND_URL = process.env.REACT_APP_API_URL || 'http://localhost:40
 
 const api = axios.create({
   baseURL: `${BACKEND_URL}/api`,
-  withCredentials: false,
+  withCredentials: true,
 });
 
 api.interceptors.request.use(config => {
