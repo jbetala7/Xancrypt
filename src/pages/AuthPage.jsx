@@ -56,7 +56,8 @@ export default function AuthPage({ setIsLoggedIn }) {
   };
 
   const redirectTo = (provider) => {
-    window.location.href = `http://localhost:4000/api/auth/${provider}`;
+    window.location.href = `${process.env.REACT_APP_API_URL}/api/auth/${provider}`;
+    console.log('Redirecting to:', `${process.env.REACT_APP_API_URL}/api/auth/${provider}`);
   };
 
   return (

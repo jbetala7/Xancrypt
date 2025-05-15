@@ -77,7 +77,7 @@ export default function EncryptionApp() {
       headers['Authorization'] = `Bearer ${token}`;
     }
     // x-test-ip for dev spoofing; change as needed
-    headers['x-test-ip'] = '192.168.88.103';
+    headers['x-test-ip'] = '192.168.88.101';
 
     setIsProcessing(true);
     setResultLink(null);

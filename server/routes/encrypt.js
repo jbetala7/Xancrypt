@@ -1,18 +1,15 @@
 // server/routes/encrypt.js
-
-const express         = require('express');
-const multer          = require('multer');
-const fs              = require('fs-extra');
-const path            = require('path');
-const archiver        = require('archiver');
-const zlib            = require('zlib');
-
+const express     = require('express');
+const multer      = require('multer');
+const fs          = require('fs-extra');
+const path        = require('path');
+const archiver    = require('archiver');
+const zlib        = require('zlib');
 const optionalAuthenticate = require('../middleware/optionalAuthenticate');
 const identifyDevice       = require('../middleware/identifyDevice');
 const DeviceUsage          = require('../models/DeviceUsage');
 const minifyCSS            = require('../tasks/minifyCSS');
 const obfuscateJS          = require('../tasks/obfuscateJS');
-
 const {
   encryptionDuration,
   encryptionErrors,
@@ -24,14 +21,14 @@ const {
 
 const router = express.Router();
 const upload = multer({ dest: 'uploads/' });
-const SCRAPE_INTERVAL = 15;
+const WINDOW_MS = 7 * 60 * 60 * 1000; // 7h
+const MAX_FILES = 5;
 
 function getClientIp(req) {
   return (
-    req.headers['x-test-ip'] ||
     req.headers['x-forwarded-for']?.split(',')[0] ||
     req.connection.remoteAddress ||
-    req.socket?.remoteAddress ||
+    req.socket.remoteAddress ||
     req.ip
   );
 }
@@ -39,56 +36,52 @@ function getClientIp(req) {
 router.post(
   '/',
   optionalAuthenticate,
-  upload.fields([{ name: 'css' }, { name: 'js' }]),
   identifyDevice,
+  upload.fields([{ name: 'css' }, { name: 'js' }]),
   async (req, res) => {
+    // count files in this request
     const numCss = (req.files.css || []).length;
-    const numJs  = (req.files.js || []).length;
-    const filesThisRequest = numCss + numJs;
+    const numJs  = (req.files.js  || []).length;
+    const thisBatch = numCss + numJs;
 
-    const now = Date.now();
-    lastConversionTimestamp.set(now / 1000);
+    // update Prometheus
+    lastConversionTimestamp.set(Date.now() / 1000);
     lastConversionCssCount.set(numCss);
     lastConversionJsCount.set(numJs);
-
     setTimeout(() => {
       lastConversionCssCount.set(0);
       lastConversionJsCount.set(0);
-    }, (SCRAPE_INTERVAL + 1) * 1000);
+    }, WINDOW_MS/1000 + 1);
 
-    const endTimer  = encryptionDuration.startTimer();
-    const startTime = process.hrtime();
+    const timerEnd = encryptionDuration.startTimer();
+    const startHR  = process.hrtime();
 
     const ip       = getClientIp(req);
     const deviceId = req.deviceId;
     const userId   = req.user?._id || null;
 
-    console.log('🔍 Tracking userId:', userId);
-    console.log('🔍 Tracking deviceId:', deviceId);
-    console.log('🔍 Tracking IP:', ip);
-
-    const cutoff = now - 7 * 60 * 60 * 1000;
-
-    const query = userId ? { userId } : { $or: [{ deviceId }, { ip }] };
-    let usage   = await DeviceUsage.findOne(query);
-
+    // look up or create usage doc
+    const cutoff = Date.now() - WINDOW_MS;
+    let usage = await DeviceUsage.findOne(
+      userId
+        ? { userId }
+        : { $or: [{ deviceId }, { ip }] }
+    );
     if (!usage) {
-      usage = new DeviceUsage({
-        userId,
-        deviceId,
-        ip,
-        records: []
-      });
+      usage = new DeviceUsage({ userId, deviceId, ip, records: [] });
     }
 
+    // drop old records
     usage.records = usage.records.filter(r => r.time.getTime() > cutoff);
-    const filesUsed = usage.records.reduce((sum, r) => sum + r.files, 0);
+    const used = usage.records.reduce((sum, r) => sum + r.files, 0);
 
-    if ((filesUsed + filesThisRequest) > 5) {
-      const nextAllowed = new Date(Math.min(...usage.records.map(r => r.time.getTime())) + 7 * 60 * 60 * 1000);
+    if (used + thisBatch > MAX_FILES) {
+      const earliest = Math.min(...usage.records.map(r => r.time.getTime()));
+      const nextAllowed = new Date(earliest + WINDOW_MS);
       return res.status(429).json({ error: 'limit_exceeded', nextAllowed });
     }
 
+    // now do the actual file handling
     const timestamp = Date.now();
     const uploadDir = path.join(__dirname, '..', 'uploads', String(timestamp));
     const outputDir = path.join(__dirname, '..', 'output');
@@ -96,8 +89,8 @@ router.post(
     await fs.ensureDir(outputDir);
 
     const moveFiles = async files => {
-      for (const file of files) {
-        await fs.move(file.path, path.join(uploadDir, file.originalname), { overwrite: true });
+      for (const f of files) {
+        await fs.move(f.path, path.join(uploadDir, f.originalname), { overwrite: true });
       }
     };
 
@@ -105,84 +98,82 @@ router.post(
       if (req.files.css) await moveFiles(req.files.css);
       if (req.files.js)  await moveFiles(req.files.js);
 
-      const [cssResults, jsResults] = await Promise.all([
-        req.files.css ? minifyCSS(uploadDir) : Promise.resolve([]),
-        req.files.js  ? obfuscateJS(uploadDir) : Promise.resolve([])
+      const [cssRes, jsRes] = await Promise.all([
+        numCss ?     minifyCSS(uploadDir)   : Promise.resolve([]),
+        numJs  ?     obfuscateJS(uploadDir) : Promise.resolve([])
       ]);
 
       const archiveName = `${timestamp}.zip`;
       const archivePath = path.join(outputDir, archiveName);
-      const output      = fs.createWriteStream(archivePath);
+      const outStream   = fs.createWriteStream(archivePath);
       const archive     = archiver('zip', { zlib: { level: zlib.constants.Z_DEFAULT_COMPRESSION } });
 
-      archive.pipe(output);
-      cssResults.forEach(f => archive.append(f.contents, { name: f.name }));
-      jsResults.forEach(f  => archive.append(f.contents, { name: f.name }));
+      archive.pipe(outStream);
+      cssRes.forEach(f => archive.append(f.contents, { name: f.name }));
+      jsRes .forEach(f => archive.append(f.contents, { name: f.name }));
       await archive.finalize();
 
-      output.on('close', async () => {
+      outStream.on('close', async () => {
+        // record this batch
         usage.userId   = userId;
         usage.deviceId = deviceId;
         usage.ip       = ip;
-        usage.records.push({ time: new Date(), files: filesThisRequest });
+        usage.records.push({ time: new Date(), files: thisBatch });
         await usage.save();
 
-        endTimer();
-        const [secs, nanos] = process.hrtime(startTime);
-        const elapsedSec = Number((secs + nanos / 1e9).toFixed(2));
+        // finish metrics
+        timerEnd();
+        const [s, n] = process.hrtime(startHR);
+        const elapsedSec = +(s + n/1e9).toFixed(2);
         lastConversionDuration.set(elapsedSec);
-        setTimeout(() => lastConversionDuration.set(0), (SCRAPE_INTERVAL + 1) * 1000);
+        setTimeout(() => lastConversionDuration.set(0), WINDOW_MS/1000 + 1);
 
         res.json({ downloadLink: `/api/encrypt/download/${archiveName}`, elapsedSec });
       });
 
       archive.on('error', err => {
         encryptionErrors.inc();
-        console.error('Archive error:', err);
-        res.status(500).json({ error: 'Failed to create ZIP archive' });
+        console.error(err);
+        res.status(500).json({ error: 'Failed to archive' });
       });
     } catch (err) {
       encryptionErrors.inc();
-      console.error('Encryption error:', err);
+      console.error(err);
       res.status(500).json({ error: 'Encryption failed' });
     }
   }
 );
 
+// download endpoint unchanged...
 router.get('/download/:filename', (req, res) => {
-  const filePath = path.join(__dirname, '..', 'output', req.params.filename);
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).send('File not found');
-  }
-  res.download(filePath);
+  const p = path.join(__dirname, '..', 'output', req.params.filename);
+  if (!fs.existsSync(p)) return res.status(404).send('Not found');
+  res.download(p);
 });
 
+// remaining endpoint for dashboard
 router.get('/remaining', identifyDevice, async (req, res) => {
-  const ip = getClientIp(req);
+  const ip       = getClientIp(req);
   const deviceId = req.deviceId;
+  const userId   = req.user?._id || null;
+  const cutoff   = Date.now() - WINDOW_MS;
 
-  const now = Date.now();
-  const cutoff = now - 7 * 60 * 60 * 1000;
-
-  const usage = await DeviceUsage.findOne({
-    $or: [{ deviceId }, { ip }]
-  });
-
+  const usage = await DeviceUsage.findOne(
+    userId
+      ? { userId }
+      : { $or: [{ deviceId }, { ip }] }
+  );
   if (!usage) {
-    return res.json({ remaining: 5, nextReset: null });
+    return res.json({ remaining: MAX_FILES, nextReset: null });
   }
 
   usage.records = usage.records.filter(r => r.time.getTime() > cutoff);
-  const totalUsed = usage.records.reduce((sum, r) => sum + r.files, 0);
-
+  const used = usage.records.reduce((sum, r) => sum + r.files, 0);
   const nextReset = usage.records.length
-    ? new Date(Math.min(...usage.records.map(r => r.time.getTime())) + 7 * 60 * 60 * 1000)
+    ? new Date(Math.min(...usage.records.map(r=>r.time.getTime())) + WINDOW_MS)
     : null;
 
-  res.json({
-    remaining: Math.max(0, 5 - totalUsed),
-    nextReset
-  });
+  res.json({ remaining: Math.max(0, MAX_FILES - used), nextReset });
 });
 
 module.exports = router;

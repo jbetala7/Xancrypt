@@ -29,9 +29,10 @@ const PORT = process.env.PORT || 4000;
 app.use((req, res, next) => { httpRequests.inc(); next(); });
 // allow sending/receiving cookies from frontend
 app.use(cors({
-  origin: process.env.CLIENT_URL,
+  origin: process.env.CLIENT_URL || 'http://localhost:3000',
   credentials: true
 }));
+
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -63,6 +64,10 @@ app.use('/api/auth', authRoute);
 app.use('/api/checkout', require('./middleware/authenticate'), checkoutRoute);
 app.use('/api/encrypt', encryptRoute);
 app.use('/api/admin', adminRoute);
+app.use('/api/users', require('./routes/users'));
+app.use('/api/subscription', require('./routes/subscription'));
+
+
 
 // ─── Prometheus ────────────────────────────────────────────────────────────────
 app.get('/metrics', async (req, res) => {

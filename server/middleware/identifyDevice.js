@@ -1,10 +1,20 @@
 // server/middleware/identifyDevice.js
+const { v4: uuidv4 } = require('uuid');
 
 module.exports = function identifyDevice(req, res, next) {
-  const deviceId = req.body.deviceId || req.headers['x-device-id'];
+  let deviceId = req.cookies?.deviceId;
+
   if (!deviceId) {
-    return res.status(400).json({ error: 'Missing device ID' });
+    deviceId = uuidv4();
+    res.cookie('deviceId', deviceId, {
+      httpOnly: false,             // readable by frontend if needed
+      secure: false,               // change to true in production with HTTPS
+      sameSite: 'Lax',
+      maxAge: 365 * 24 * 60 * 60 * 1000 // 1 year
+    });
+    console.log('🎯 New deviceId issued:', deviceId);
   }
+
   req.deviceId = deviceId;
   next();
 };

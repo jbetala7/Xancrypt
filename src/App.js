@@ -1,53 +1,51 @@
+// src/App.js
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import { FiMenu } from 'react-icons/fi';
-import EncryptionApp from './EncryptionApp';
-import AdminDashboard from './pages/AdminDashboard';
-import AuthPage from './pages/AuthPage';
-import logo from './logo.png';
-import { Toaster } from 'react-hot-toast';
+import EncryptionApp   from './EncryptionApp';
+import AdminDashboard  from './pages/AdminDashboard';
+import UserDashboard   from './pages/UserDashboard';
+import AuthPage        from './pages/AuthPage';
+import logo            from './logo.png';
+import { Toaster }     from 'react-hot-toast';
+import api             from './api';
 
 export default function App() {
-  const [darkMode, setDarkMode] = useState(true);
+  const [darkMode,   setDarkMode]   = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  // On mount, check for existing token and attempt silent refresh
+  // On mount, pick up any existing JWT and then attempt silent refresh
   useEffect(() => {
-    const existing = localStorage.getItem('token');
-    if (existing) {
+    if (localStorage.getItem('token')) {
       setIsLoggedIn(true);
     }
 
-    fetch(`${process.env.REACT_APP_API_URL}/api/auth/refresh`, {
-      method: 'POST',
-      credentials: 'include', // send refreshToken cookie
-    })
-      .then(res => res.json())
-      .then(data => {
+    api.post('/auth/refresh')
+      .then(({ data }) => {
         if (data.token) {
           localStorage.setItem('token', data.token);
           setIsLoggedIn(true);
         }
       })
       .catch(() => {
-        // no-op if refresh fails
+        // no-op
       });
   }, []);
 
   const handleLogout = () => {
-    fetch(`${process.env.REACT_APP_API_URL}/api/auth/logout`, {
-      method: 'POST',
-      credentials: 'include',
-    }).finally(() => {
-      localStorage.removeItem('token');
-      setIsLoggedIn(false);
-      window.location.href = '/auth?loggedout=1';
-    });
+    api.post('/auth/logout')
+      .finally(() => {
+        localStorage.removeItem('token');
+        setIsLoggedIn(false);
+        // redirect to login with a toast flag
+        window.location.href = '/auth?loggedout=1';
+      });
   };
 
   return (
     <Router>
       <div className={darkMode ? 'dark' : ''}>
+        {/* ─── HEADER ───────────────────────────────────────────────────────────── */}
         <header className="sticky top-0 z-50 bg-[#0f172a] text-white shadow-md border-b border-blue-800">
           <div className="max-w-5xl mx-auto flex items-center justify-between px-4 py-3">
             <Link to="/" className="flex items-center gap-3">
@@ -80,10 +78,22 @@ export default function App() {
                   Login
                 </Link>
               )}
-              <Link to="/admin" className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded">
+
+              <Link
+                to="/admin"
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded"
+              >
                 Admin
               </Link>
 
+              {isLoggedIn && (
+                <Link
+                  to="/dashboard"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded"
+                >
+                  My Account
+                </Link>
+              )}
 
               <button className="p-2 hover:bg-gray-800 rounded">
                 <FiMenu className="h-6 w-6" />
@@ -100,14 +110,26 @@ export default function App() {
           }}
         />
 
+        {/* ─── ROUTES & LAYOUT ─────────────────────────────────────────────────── */}
         <main className="min-h-screen bg-[#f9fafb] dark:bg-[#1e293b] text-black dark:text-white px-4 py-10">
           <Routes>
-            {/* ADMIN: full-width container */}
+
+            {/* ADMIN (full-width) */}
             <Route
               path="/admin"
               element={
                 <div className="mx-auto max-w-full p-6 bg-white dark:bg-[#273549] shadow-lg">
                   <AdminDashboard />
+                </div>
+              }
+            />
+
+            {/* USER DASHBOARD (full-width) */}
+            <Route
+              path="/dashboard"
+              element={
+                <div className="mx-auto max-w-full p-6 bg-white dark:bg-[#273549] shadow-lg">
+                  <UserDashboard />
                 </div>
               }
             />
@@ -122,7 +144,7 @@ export default function App() {
               }
             />
 
-            {/* HOME / ENCRYPT */}
+            {/* HOME / ENCRYPTION TOOL */}
             <Route
               path="/"
               element={
@@ -131,6 +153,7 @@ export default function App() {
                 </div>
               }
             />
+
           </Routes>
         </main>
       </div>

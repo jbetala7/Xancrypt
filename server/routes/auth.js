@@ -12,6 +12,37 @@ const router = express.Router();
 const ACCESS_EXPIRES_IN  = '15m';
 const REFRESH_EXPIRES_IN = '30d';
 
+const passport = require('passport');
+
+router.get('/google', passport.authenticate('google', {
+  scope: ['profile', 'email']
+}));
+
+router.get('/google/callback', passport.authenticate('google', {
+  failureRedirect: `${process.env.CLIENT_URL}/auth?error=google`,
+  session: false
+}), async (req, res) => {
+  const token = jwt.sign({ id: req.user._id }, process.env.JWT_SECRET);
+  res.redirect(`${process.env.CLIENT_URL}/auth?token=${token}`);
+});
+
+
+// Trigger GitHub login
+router.get('/github', passport.authenticate('github', { scope: ['user:email'] }));
+
+// Handle GitHub callback
+router.get(
+  '/github/callback',
+  passport.authenticate('github', {
+    failureRedirect: `${process.env.CLIENT_URL}/auth?error=github`,
+    session: false
+  }),
+  (req, res) => {
+    const token = jwt.sign({ id: req.user._id }, process.env.JWT_SECRET);
+    res.redirect(`${process.env.CLIENT_URL}/auth?token=${token}`);
+  }
+);
+
 // ─── SIGNUP ───────────────────────────────────────────────────────────────────
 router.post('/signup', async (req, res) => {
   const { email, password } = req.body;
