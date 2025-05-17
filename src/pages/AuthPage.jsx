@@ -8,6 +8,7 @@ export default function AuthPage({ setIsLoggedIn }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [loading, setLoading] = useState(false);
   const [params] = useSearchParams();
   const navigate = useNavigate();
 
@@ -46,12 +47,15 @@ export default function AuthPage({ setIsLoggedIn }) {
         toast.success('Logged in!');
         navigate('/');
       } else {
+        setLoading(true);
         await api.post(route, { email, password });
         toast.success('Verification email sent! Check your inbox.');
         setMode('login');
       }
     } catch (err) {
       toast.error(err.response?.data?.error || 'Something went wrong');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -62,7 +66,16 @@ export default function AuthPage({ setIsLoggedIn }) {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-semibold text-center">{mode === 'login' ? 'Login' : 'Create Account'}</h2>
+      <h2 className="text-lg font-semibold text-center">
+        {mode === 'login' ? 'Login' : 'Create Account'}
+      </h2>
+
+      {loading && (
+        <div className="text-center text-blue-600 dark:text-blue-300 animate-pulse">
+          Creating your account and sending verification…
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <input
           type="email"
@@ -96,6 +109,7 @@ export default function AuthPage({ setIsLoggedIn }) {
         <button
           type="submit"
           className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
+          disabled={loading}
         >
           {mode === 'login' ? 'Login' : 'Sign Up'}
         </button>

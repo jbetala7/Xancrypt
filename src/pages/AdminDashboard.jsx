@@ -111,7 +111,15 @@ export default function AdminDashboard() {
             <td className="p-2 text-center">{u.subscription.plan}</td>
             <td className="p-2 text-center space-x-2">
               <button
-                onClick={() => deleteUser(u._1d)}
+                onClick={() => {
+                  if (!u._id) {
+                    console.error('❌ No _id found for user:', u);
+                    toast.error('Cannot delete user: ID missing');
+                    return;
+                  }
+                  deleteUser(u._id);
+                }}
+
                 className="bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700"
               >
                 Delete
@@ -136,8 +144,8 @@ export default function AdminDashboard() {
         {/** Card helper props: title, value */}
         {[
           ['Total Users', summary.totalUsers],
-          ['Free Users',  summary.freeUsers],
-          ['Paid Users',  summary.paidUsers],
+          ['Free Users', summary.freeUsers],
+          ['Paid Users', summary.paidUsers],
           ['Pending Verif.', summary.pendingVerifications],
           ['Total Revenue', `$${summary.totalRevenue}`]
         ].map(([label, val], i) => (
@@ -151,24 +159,23 @@ export default function AdminDashboard() {
       {/* Tabs */}
       <div className="space-y-4">
         <div className="flex space-x-4">
-          {['all','free','paid','revenue'].map(tab => (
+          {['all', 'free', 'paid', 'revenue'].map(tab => (
             <button
               key={tab}
               onClick={() => setCurrentTab(tab)}
-              className={`px-4 py-2 rounded ${
-                currentTab===tab 
-                  ? 'bg-blue-600 text-white' 
+              className={`px-4 py-2 rounded ${currentTab === tab
+                  ? 'bg-blue-600 text-white'
                   : 'bg-gray-200 dark:bg-gray-700 dark:text-gray-300'
-              }`}
+                }`}
             >
-              {tab.charAt(0).toUpperCase()+tab.slice(1)}
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
         </div>
 
-        {['all','free','paid'].includes(currentTab) && (
-          users.length 
-            ? renderUsersTable() 
+        {['all', 'free', 'paid'].includes(currentTab) && (
+          users.length
+            ? renderUsersTable()
             : <p className="p-4 text-center text-red-600 dark:text-red-400">No users to display</p>
         )}
 
@@ -176,7 +183,7 @@ export default function AdminDashboard() {
           <div className="space-y-6">
             <div className="h-64 bg-white dark:bg-gray-800 shadow p-4 rounded">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={revenueTrends} margin={{ top:20,right:20,left:0,bottom:0 }}>
+                <LineChart data={revenueTrends} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" stroke="#888" />
                   <YAxis stroke="#888" />

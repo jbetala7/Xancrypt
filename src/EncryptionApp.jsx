@@ -1,9 +1,8 @@
 // src/EncryptionApp.jsx
 
-import React, { useState, useRef } from 'react';
-import { toast } from 'react-hot-toast';
-
-const BACKEND_URL = process.env.REACT_APP_API_URL || 'http://localhost:4000';
+import React, { useState, useRef, useEffect } from 'react'
+import { toast } from 'react-hot-toast'
+import api from './api' // Axios instance, baseURL points to BACKEND_URL + '/api'
 
 const Button = ({ children, ...props }) => (
   <button
@@ -13,179 +12,222 @@ const Button = ({ children, ...props }) => (
   >
     {children}
   </button>
-);
+)
 
 export default function EncryptionApp() {
-  const [cssFiles, setCssFiles] = useState([]);
-  const [jsFiles, setJsFiles] = useState([]);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [resultLink, setResultLink] = useState(null);
-  const [elapsedSec, setElapsedSec] = useState(null);
-  const [progress, setProgress] = useState(0);
-  const [archiveFormat, setArchiveFormat] = useState('zip');
-  const [baseFilename, setBaseFilename] = useState('encrypted-files');
-  const [fileHistory, setFileHistory] = useState([]);
+  const [cssFiles, setCssFiles] = useState([])
+  const [jsFiles, setJsFiles] = useState([])
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [resultLink, setResultLink] = useState(null)
+  const [elapsedSec, setElapsedSec] = useState(null)
+  const [progress, setProgress] = useState(0)
+  const [archiveFormat, setArchiveFormat] = useState('zip')
+  const [baseFilename, setBaseFilename] = useState('encrypted-files')
+  const [fileHistory, setFileHistory] = useState([])
 
-  const cssInputRef = useRef(null);
-  const jsInputRef = useRef(null);
+  const cssInputRef = useRef(null)
+  const jsInputRef  = useRef(null)
 
-  const formats = ['zip', 'tar.gz', '7z'];
-  const fullFilename = `${baseFilename.trim() || 'encrypted-files'}.${archiveFormat}`;
+  const formats      = ['zip', 'tar.gz', '7z']
+  const fullFilename = `${(baseFilename || 'encrypted-files').trim()}.${archiveFormat}`
 
-  const preventDefaults = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
+  // determine login state
+  const token      = localStorage.getItem('token')
+  const isLoggedIn = Boolean(token)
+
+  // load history once on mount
+  useEffect(() => {
+    if (isLoggedIn) {
+      api.get('/history')
+        .then(res => {
+          // Map backend 'time' to frontend 'timestamp'
+          const mapped = res.data.map(entry => ({
+            ...entry,
+            timestamp: entry.time || entry.timestamp // fallback for localStorage
+          }))
+          setFileHistory(mapped)
+        })
+        .catch(() => toast.error('Could not load history from server'))
+    } else {
+      const saved = localStorage.getItem('xancrypt_history')
+      if (saved) setFileHistory(JSON.parse(saved))
+    }
+  }, [isLoggedIn])
+
+  const preventDefaults = e => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
 
   const handleFileDrop = (e, type) => {
-    preventDefaults(e);
-    const dropped = Array.from(e.dataTransfer.files).filter(file =>
-      type === 'css' ? file.name.endsWith('.css') : file.name.endsWith('.js')
-    );
-    if (type === 'css') setCssFiles(prev => [...prev, ...dropped]);
-    else setJsFiles(prev => [...prev, ...dropped]);
-  };
+    preventDefaults(e)
+    const dropped = Array.from(e.dataTransfer.files).filter(f =>
+      type === 'css' ? f.name.endsWith('.css') : f.name.endsWith('.js')
+    )
+    if (type === 'css') setCssFiles(prev => [...prev, ...dropped])
+    else               setJsFiles(prev => [...prev, ...dropped])
+  }
 
   const handleSubmit = async () => {
     if (!cssFiles.length && !jsFiles.length) {
-      toast.error('Please upload at least one file.');
-      return;
+      toast.error('Please upload at least one file.')
+      return
     }
 
-    const formData = new FormData();
-    cssFiles.forEach(f => formData.append('css', f));
-    jsFiles.forEach(f => formData.append('js', f));
-    formData.append('format', archiveFormat);
-    formData.append('name', baseFilename);
+    const formData = new FormData()
+    cssFiles.forEach(f => formData.append('css', f))
+    jsFiles.forEach(f => formData.append('js', f))
+    formData.append('format', archiveFormat)
+    formData.append('name', baseFilename)
 
-    // Device ID tracking for rate limiting
-    const deviceId = (() => {
-      let id = localStorage.getItem('deviceId');
-      if (!id) {
-        id = crypto.randomUUID();
-        localStorage.setItem('deviceId', id);
-      }
-      return id;
-    })();
-    console.log('📦 deviceId being sent:', deviceId);
-    formData.append('deviceId', deviceId);
-
-    // Build headers
-    const headers = {};
-    const token = localStorage.getItem('token');
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+    // deviceId for rate limit
+    let deviceId = localStorage.getItem('deviceId')
+    if (!deviceId) {
+      deviceId = crypto.randomUUID()
+      localStorage.setItem('deviceId', deviceId)
     }
-    // x-test-ip for dev spoofing; change as needed
-    headers['x-test-ip'] = '192.168.88.101';
+    formData.append('deviceId', deviceId)
 
-    setIsProcessing(true);
-    setResultLink(null);
-    setElapsedSec(null);
-    setProgress(0);
-    toast.loading('Encrypting files...');
+    const headers = { 'x-test-ip': '192.168.88.101' }
+    if (token) headers['Authorization'] = `Bearer ${token}`
+
+    setIsProcessing(true)
+    setResultLink(null)
+    setElapsedSec(null)
+    setProgress(0)
+    toast.loading('Encrypting files...')
 
     const interval = setInterval(() => {
       setProgress(p => {
-        const next = p + Math.random() * 10;
+        const next = p + Math.random() * 10
         if (next >= 95) {
-          clearInterval(interval);
-          return 95;
+          clearInterval(interval)
+          return 95
         }
-        return Math.round(next);
-      });
-    }, 200);
+        return Math.round(next)
+      })
+    }, 200)
 
     try {
-      const resp = await fetch(`${BACKEND_URL}/api/encrypt`, {
+      const resp = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/encrypt`, {
         method: 'POST',
         headers,
         body: formData,
-      });
+      })
 
       if (resp.status === 429) {
-        const data = await resp.json();
-        const wait = new Date(data.nextAllowed).toLocaleTimeString();
-        toast.error(`Free limit of 5 files reached. Try again at ${wait} or upgrade.`);
-        setIsProcessing(false);
-        return;
+        const { nextAllowed } = await resp.json()
+        toast.error(`Free limit reached. Try again at ${new Date(nextAllowed).toLocaleTimeString()}`)
+        return
       }
 
-      const data = await resp.json();
-
+      const data = await resp.json()
       if (data.downloadLink) {
-        const downloadURL = `${BACKEND_URL}${data.downloadLink}`;
+        const downloadURL = `${process.env.REACT_APP_API_URL || 'http://localhost:4000'}${data.downloadLink}`;
         setResultLink(downloadURL);
         setElapsedSec(data.elapsedSec);
 
-        const timestamp = new Date().toLocaleString();
-        setFileHistory(prev => [
-          {
-            timestamp,
-            cssCount: cssFiles.length,
-            jsCount: jsFiles.length,
-            elapsedSec: data.elapsedSec,
-            link: downloadURL,
-            filename: fullFilename,
-          },
-          ...prev,
-        ]);
-        toast.dismiss();
-        toast.success('Files encrypted successfully!');
-      }
+        // use the server-returned archiveName
+        const serverFilename = data.archiveName || downloadURL.split('/').pop();
 
-      setProgress(100);
+        const newEntry = {
+          timestamp:  new Date().toISOString(),
+          cssCount:   cssFiles.length,
+          jsCount:    jsFiles.length,
+          elapsedSec: Number(data.elapsedSec),
+          link:       downloadURL,
+          filename:   serverFilename,
+        };
+
+        if (isLoggedIn) {
+          // push to server and local state
+          api.post('/history', newEntry).catch(() => {})
+          setFileHistory(prev => [
+            { ...newEntry, timestamp: newEntry.timestamp }, // always use timestamp
+            ...prev.map(entry => ({
+              ...entry,
+              timestamp: entry.timestamp || entry.time // normalize old entries
+            }))
+          ])
+        } else {
+          // localStorage fallback
+          const updated = [
+            { ...newEntry, timestamp: newEntry.timestamp },
+            ...fileHistory.map(entry => ({
+              ...entry,
+              timestamp: entry.timestamp || entry.time
+            }))
+          ]
+          localStorage.setItem('xancrypt_history', JSON.stringify(updated))
+          setFileHistory(updated)
+        }
+
+        toast.dismiss()
+        toast.success('Files encrypted successfully!')
+      }
     } catch (err) {
-      toast.dismiss();
-      toast.error('Encryption failed. Please try again.');
-      console.error(err);
-      setProgress(0);
+      console.error(err)
+      toast.dismiss()
+      toast.error('Encryption failed. Please try again.')
     } finally {
-      setTimeout(() => setIsProcessing(false), 300);
+      clearInterval(interval)
+      setTimeout(() => setIsProcessing(false), 300)
     }
-  };
+  }
 
   const downloadFile = async (url, filename) => {
     try {
-      const res = await fetch(url);
-      const blob = await res.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(blobUrl);
-
-      toast.success(`✅ Downloaded: ${filename}`);
-    } catch (err) {
-      toast.error('Download failed.');
-      console.error(err);
+      const res = await fetch(url)
+      const blob = await res.blob()
+      const blobUrl = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(blobUrl)
+      toast.success(`✅ Downloaded: ${filename}`)
+    } catch {
+      toast.error('Download failed.')
     }
-  };
+  }
 
   const handleClear = () => {
-    setCssFiles([]);
-    setJsFiles([]);
-    setResultLink(null);
-    setElapsedSec(null);
-    setProgress(0);
-    setBaseFilename('encrypted-files');
-    if (cssInputRef.current) cssInputRef.current.value = '';
-    if (jsInputRef.current) jsInputRef.current.value = '';
-    toast('Form cleared.', { icon: '🧹' });
-  };
+    setCssFiles([])
+    setJsFiles([])
+    setResultLink(null)
+    setElapsedSec(null)
+    setProgress(0)
+    setBaseFilename('encrypted-files')
+    if (cssInputRef.current) cssInputRef.current.value = ''
+    if (jsInputRef.current)  jsInputRef.current.value = ''
+    toast('Form cleared.', { icon: '🧹' })
+  }
 
-  const hasFiles = cssFiles.length || jsFiles.length;
+  const handleClearHistory = () => {
+    if (isLoggedIn) {
+      api.delete('/history').catch(() => toast.error('Failed to clear server history'))
+    }
+    localStorage.removeItem('xancrypt_history')
+    setFileHistory([])
+    toast('History cleared 🧹')
+  }
+
+  // Helper to normalize history entries
+  const normalizedHistory = fileHistory.map(entry => ({
+    ...entry,
+    timestamp: entry.timestamp || entry.time
+  }));
+
+  const hasFiles = cssFiles.length || jsFiles.length
 
   return (
     <div className="space-y-6">
       {/* CSS Dropzone */}
       <div
         onClick={() => cssInputRef.current?.click()}
-        onDrop={(e) => handleFileDrop(e, 'css')}
+        onDrop={e => handleFileDrop(e, 'css')}
         onDragOver={preventDefaults}
         onDragEnter={preventDefaults}
         className="border-2 border-dashed border-blue-400 rounded-lg p-4 text-center text-sm cursor-pointer bg-blue-100 dark:bg-blue-900 hover:bg-blue-200 dark:hover:bg-blue-800 text-gray-700 dark:text-gray-300"
@@ -196,20 +238,20 @@ export default function EncryptionApp() {
           accept=".css"
           multiple
           ref={cssInputRef}
-          onChange={(e) => setCssFiles(Array.from(e.target.files))}
+          onChange={e => setCssFiles(Array.from(e.target.files))}
           className="hidden"
         />
       </div>
       {cssFiles.length > 0 && (
         <ul className="text-xs mt-2 text-gray-500 dark:text-gray-300 list-disc list-inside">
-          {cssFiles.map((f, i) => <li key={i}>{f.name}</li>)}
+          {cssFiles.map((f,i) => <li key={i}>{f.name}</li>)}
         </ul>
       )}
 
       {/* JS Dropzone */}
       <div
         onClick={() => jsInputRef.current?.click()}
-        onDrop={(e) => handleFileDrop(e, 'js')}
+        onDrop={e => handleFileDrop(e, 'js')}
         onDragOver={preventDefaults}
         onDragEnter={preventDefaults}
         className="border-2 border-dashed border-yellow-400 rounded-lg p-4 text-center text-sm cursor-pointer bg-yellow-100 dark:bg-yellow-900 hover:bg-yellow-200 dark:hover:bg-yellow-800 text-gray-700 dark:text-gray-300"
@@ -220,33 +262,31 @@ export default function EncryptionApp() {
           accept=".js"
           multiple
           ref={jsInputRef}
-          onChange={(e) => setJsFiles(Array.from(e.target.files))}
+          onChange={e => setJsFiles(Array.from(e.target.files))}
           className="hidden"
         />
       </div>
       {jsFiles.length > 0 && (
         <ul className="text-xs mt-2 text-gray-500 dark:text-gray-300 list-disc list-inside">
-          {jsFiles.map((f, i) => <li key={i}>{f.name}</li>)}
+          {jsFiles.map((f,i) => <li key={i}>{f.name}</li>)}
         </ul>
       )}
 
-      {/* Format Dropdown */}
+      {/* Archive format selector */}
       <div>
         <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
           Archive Format
         </label>
         <select
           value={archiveFormat}
-          onChange={(e) => setArchiveFormat(e.target.value)}
+          onChange={e => setArchiveFormat(e.target.value)}
           className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-black dark:text-white px-3 py-2 rounded"
         >
-          {formats.map((f) => (
-            <option key={f} value={f}>.{f}</option>
-          ))}
+          {formats.map(f => <option key={f} value={f}>.{f}</option>)}
         </select>
       </div>
 
-      {/* Base File Name Input */}
+      {/* Base filename input */}
       <div>
         <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
           File Name
@@ -255,7 +295,7 @@ export default function EncryptionApp() {
           <input
             type="text"
             value={baseFilename}
-            onChange={(e) => setBaseFilename(e.target.value)}
+            onChange={e => setBaseFilename(e.target.value)}
             placeholder="encrypted-files"
             className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-black dark:text-white px-3 py-2 rounded-l"
           />
@@ -265,7 +305,7 @@ export default function EncryptionApp() {
         </div>
       </div>
 
-      {/* Encrypt & Clear Buttons */}
+      {/* Encrypt / Clear */}
       <Button onClick={handleSubmit} disabled={isProcessing} className="w-full">
         {isProcessing ? 'Processing...' : 'Encrypt Files'}
       </Button>
@@ -277,7 +317,7 @@ export default function EncryptionApp() {
         🔁 Clear Form
       </Button>
 
-      {/* Progress Bar */}
+      {/* Progress bar */}
       {isProcessing && (
         <div className="relative w-full h-4 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
           <div
@@ -290,18 +330,17 @@ export default function EncryptionApp() {
         </div>
       )}
 
-      {/* Elapsed Time Display */}
+      {/* Elapsed time */}
       {elapsedSec !== null && (
         <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
-          ⏱️ Encryption took <strong>{elapsedSec} s</strong>
+          ⏱️ Encryption took <strong>{elapsedSec.toFixed(2)} s</strong>
         </p>
       )}
 
-      {/* Download Link */}
+      {/* Download link */}
       {resultLink && (
         <div className="text-center mt-4">
           <button
-            type="button"
             onClick={() => downloadFile(resultLink, fullFilename)}
             className="text-blue-400 underline text-sm"
           >
@@ -311,17 +350,15 @@ export default function EncryptionApp() {
       )}
 
       {/* File History */}
-      {fileHistory.length > 0 && (
+      {normalizedHistory.length > 0 && (
         <div className="mt-6">
-          <h2 className="text-lg font-semibold mb-2 text-white dark:text-white">
-            📜 File History
-          </h2>
+          <h2 className="text-lg font-semibold mb-2 text-white dark:text-white">📜 File History</h2>
           <ul className="space-y-2 text-sm text-gray-700 dark:text-gray-200">
-            {fileHistory.map((entry, i) => (
+            {normalizedHistory.map((entry, i) => (
               <li key={i} className="border p-3 rounded bg-gray-100 dark:bg-gray-800">
-                <div><strong>Uploaded:</strong> {entry.timestamp}</div>
+                <div><strong>Uploaded:</strong> {new Date(entry.timestamp).toLocaleString()}</div>
                 <div><strong>CSS:</strong> {entry.cssCount}, <strong>JS:</strong> {entry.jsCount}</div>
-                <div><strong>Time:</strong> {entry.elapsedSec} s</div>
+                <div><strong>Time:</strong> {(entry.elapsedSec||0).toFixed(2)} s</div>
                 <div>
                   <button
                     type="button"
@@ -334,8 +371,14 @@ export default function EncryptionApp() {
               </li>
             ))}
           </ul>
+          <Button
+            onClick={handleClearHistory}
+            className="mt-4 bg-red-500 hover:bg-red-600 w-full"
+          >
+            Clear File History
+          </Button>
         </div>
       )}
     </div>
-  );
+  )
 }

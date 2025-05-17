@@ -1,7 +1,6 @@
 // src/App.js
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import { FiMenu } from 'react-icons/fi';
 import EncryptionApp   from './EncryptionApp';
 import AdminDashboard  from './pages/AdminDashboard';
 import UserDashboard   from './pages/UserDashboard';
@@ -66,7 +65,7 @@ export default function App() {
               {isLoggedIn ? (
                 <button
                   onClick={handleLogout}
-                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm"
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-sm rounded transition"
                 >
                   Logout
                 </button>
@@ -81,7 +80,7 @@ export default function App() {
 
               <Link
                 to="/admin"
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded"
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-sm rounded transition"
               >
                 Admin
               </Link>
@@ -89,15 +88,12 @@ export default function App() {
               {isLoggedIn && (
                 <Link
                   to="/dashboard"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded"
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-sm rounded transition"
                 >
                   My Account
                 </Link>
               )}
 
-              <button className="p-2 hover:bg-gray-800 rounded">
-                <FiMenu className="h-6 w-6" />
-              </button>
             </div>
           </div>
         </header>

@@ -1,13 +1,14 @@
 // server/routes/admin.js
 
-const express      = require('express');
-const mongoose     = require('mongoose');
-const client       = require('prom-client');
-const stripe       = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const express = require('express');
+const mongoose = require('mongoose');
+const client = require('prom-client');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const authenticate = require('../middleware/authenticate');
-const isAdmin      = require('../middleware/isAdmin');
-const User         = require('../models/User');
-const DeviceUsage  = require('../models/DeviceUsage');
+const isAdmin = require('../middleware/isAdmin');
+const User = require('../models/User');
+const DeviceUsage = require('../models/DeviceUsage');
+const History = require('../models/History');
 const {
   register,
   encryptionDuration,
@@ -44,6 +45,9 @@ router.delete(
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
       }
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ error: 'Invalid user ID' });
+      }
       await user.deleteOne();
       // also clear usage
       await DeviceUsage.deleteMany({ userId: id });
@@ -66,14 +70,14 @@ router.get(
       const usages = await DeviceUsage.find().populate('userId', 'email');
       const summary = usages.map(u => {
         const recent = u.records.filter(r => r.time.getTime() > cutoff);
-        const total  = recent.reduce((sum, r) => sum + r.files, 0);
+        const total = recent.reduce((sum, r) => sum + r.files, 0);
         return {
-          deviceId:    u.deviceId,
-          ip:          u.ip,
-          userId:      u.userId?._id   || null,
-          email:       u.userId?.email || null,
+          deviceId: u.deviceId,
+          ip: u.ip,
+          userId: u.userId?._id || null,
+          email: u.userId?.email || null,
           filesLast7h: total,
-          records:     recent
+          records: recent
         };
       });
       res.json(summary);
@@ -111,15 +115,15 @@ router.get(
   async (req, res) => {
     try {
       const totalUsers = await User.countDocuments();
-      const freeUsers  = await User.countDocuments({ 'subscription.plan': 'free' });
-      const paidUsers  = await User.countDocuments({ 'subscription.plan': { $ne: 'free' } });
+      const freeUsers = await User.countDocuments({ 'subscription.plan': 'free' });
+      const paidUsers = await User.countDocuments({ 'subscription.plan': { $ne: 'free' } });
       const pendingVerif = await User.countDocuments({ active: false });
 
       // Sum all paid invoices (up to last 100 for example)
       const invoices = await stripe.invoices.list({ limit: 100 });
       const totalRevenue = invoices.data
         .filter(inv => inv.paid)
-        .reduce((sum, inv) => sum + (inv.amount_paid/100), 0);
+        .reduce((sum, inv) => sum + (inv.amount_paid / 100), 0);
 
       res.json({
         totalUsers,
@@ -148,7 +152,7 @@ router.get(
       if (plan === 'paid') query['subscription.plan'] = { $ne: 'free' };
 
       const users = await User.find(query)
-        .skip((page-1)*perPage)
+        .skip((page - 1) * perPage)
         .limit(Number(perPage))
         .lean();
 
@@ -157,7 +161,7 @@ router.get(
         const usage = await DeviceUsage.findOne({ userId: u._id });
         return {
           ...u,
-          filesEncrypted: usage?.records?.reduce((s,r)=>s+r.files,0) || 0
+          filesEncrypted: usage?.records?.reduce((s, r) => s + r.files, 0) || 0
         };
       }));
 
@@ -170,24 +174,7 @@ router.get(
 );
 
 // ─── NEW: UPDATE USER FIELDS ────────────────────────────────────────────────────
-router.patch(
-  '/users/:id',
-  authenticate,
-  isAdmin,
-  async (req, res) => {
-    try {
-      const updates = {};
-      ['active','role'].forEach(f => {
-        if (req.body[f] !== undefined) updates[f] = req.body[f];
-      });
-      const user = await User.findByIdAndUpdate(req.params.id, updates, { new: true });
-      res.json(user);
-    } catch (err) {
-      console.error('Admin update user error:', err);
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  }
-);
+8
 
 // ─── NEW: RESET A USER’S USAGE ─────────────────────────────────────────────────
 router.post(
@@ -220,15 +207,15 @@ router.get(
       const byMonth = {};
       subs.data.forEach(s => {
         const d = new Date(s.current_period_end * 1000);
-        const key = `${d.getFullYear()}-${d.getMonth()+1}`;
-        byMonth[key] = (byMonth[key]||0) + (s.plan.amount/100);
+        const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
+        byMonth[key] = (byMonth[key] || 0) + (s.plan.amount / 100);
       });
 
       const result = [];
-      for (let i=11; i>=0; i--) {
-        const m = new Date(now.getFullYear(), now.getMonth()-i, 1);
-        const key = `${m.getFullYear()}-${m.getMonth()+1}`;
-        result.push({ month: key, revenue: byMonth[key]||0 });
+      for (let i = 11; i >= 0; i--) {
+        const m = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${m.getFullYear()}-${m.getMonth() + 1}`;
+        result.push({ month: key, revenue: byMonth[key] || 0 });
       }
       res.json(result);
     } catch (err) {
@@ -250,8 +237,8 @@ router.get(
         .filter(inv => inv.paid)
         .map(inv => ({
           id: inv.id,
-          date: new Date(inv.created*1000),
-          amount: inv.amount_paid/100,
+          date: new Date(inv.created * 1000),
+          amount: inv.amount_paid / 100,
           customer_email: inv.customer_email || inv.metadata.email
         }));
       res.json(recent);

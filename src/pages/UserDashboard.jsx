@@ -1,81 +1,56 @@
 // src/pages/UserDashboard.jsx
-import React, { useState, useEffect } from 'react';
-import toast from 'react-hot-toast';
-import api   from '../api';
+import React, { useState } from 'react';
+import useUserDashboard from '../hooks/useUserDashboard';
 
 export default function UserDashboard() {
-  const MAX_FILES = 5;
+  const {
+    MAX_FILES,
+    user,
+    plan,
+    remaining,
+    nextReset,
+    used,
+    form,
+    editing,
+    loading,
+    passwordForm,
+    showPasswordForm,
+    setForm,
+    setEditing,
+    setPasswordForm,
+    setShowPasswordForm,
+    saveProfile,
+    changePassword,
+    cancelSubscription
+  } = useUserDashboard();
 
-  // fetched data
-  const [user, setUser]           = useState(null);
-  const [plan, setPlan]           = useState(null);
-  const [remaining, setRemaining] = useState(null);
-  const [nextReset, setNextReset] = useState(null);
+  const [showOld, setShowOld] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
-  // UI/edit state
-  const [editing, setEditing] = useState(false);
-  const [form, setForm]       = useState({
-    firstName: '',
-    lastName:  '',
-    email:     ''
-  });
-
-  // derived
-  const used = remaining != null ? MAX_FILES - remaining : 0;
-
-  useEffect(() => {
-    // load profile
-    api.get('/users/me')
-      .then(res => {
-        setUser(res.data);
-        setForm({
-          firstName: res.data.firstName || '',
-          lastName:  res.data.lastName  || '',
-          email:     res.data.email
-        });
-      })
-      .catch(() => toast.error('Failed loading profile'));
-
-    // load subscription
-    api.get('/subscription')
-      .then(res => setPlan(res.data))
-      .catch(() => toast.error('Failed loading subscription'));
-
-    // load usage
-    api.get('/encrypt/remaining')
-      .then(res => {
-        setRemaining(res.data.remaining);
-        setNextReset(res.data.nextReset);
-      })
-      .catch(() => toast.error('Failed loading usage'));
-  }, []);
-
-  const saveProfile = async () => {
-    try {
-      await api.patch('/users/me', form);
-      toast.success('Profile saved — verify email if you changed it');
-      setEditing(false);
-      // reload to get updated `active` flag if email changed
-      const me = await api.get('/users/me');
-      setUser(me.data);
-    } catch {
-      toast.error('Save failed');
-    }
-  };
-
-  if (!user || !plan || remaining == null) {
-    return <div>Loading…</div>;
-  }
+  if (!user || !plan || remaining == null) return <div>Loading…</div>;
 
   return (
     <div className="space-y-6 text-gray-900 dark:text-gray-100 p-6">
+      {loading && (
+        <div className="text-center text-blue-600 dark:text-blue-300 animate-pulse">
+          Saving your profile and verifying...
+        </div>
+      )}
+
+      {!user.active && (
+        <div className="bg-yellow-100 border-l-4 border-yellow-600 text-yellow-800 dark:text-black-200 p-4 rounded">
+          Please verify your email to unlock full access. Check your inbox!
+        </div>
+      )}
+
       {/* Profile */}
       <section className="bg-white dark:bg-gray-800 p-4 rounded shadow">
         <h2 className="text-xl font-bold mb-4">Your Profile</h2>
         {editing ? (
           <>
             <label className="block mb-2">
-              First Name<br/>
+              First Name<br />
               <input
                 value={form.firstName}
                 onChange={e => setForm({ ...form, firstName: e.target.value })}
@@ -83,7 +58,7 @@ export default function UserDashboard() {
               />
             </label>
             <label className="block mb-2">
-              Last Name<br/>
+              Last Name<br />
               <input
                 value={form.lastName}
                 onChange={e => setForm({ ...form, lastName: e.target.value })}
@@ -91,7 +66,7 @@ export default function UserDashboard() {
               />
             </label>
             <label className="block mb-4">
-              Email<br/>
+              Email<br />
               <input
                 type="email"
                 value={form.email}
@@ -108,7 +83,6 @@ export default function UserDashboard() {
             <button
               onClick={() => {
                 setEditing(false);
-                // reset form to last-saved
                 setForm({ firstName: user.firstName || '', lastName: user.lastName || '', email: user.email });
               }}
               className="bg-gray-500 text-white px-4 py-2 rounded"
@@ -121,15 +95,97 @@ export default function UserDashboard() {
             <p><strong>First Name:</strong> {user.firstName || '—'}</p>
             <p><strong>Last Name:</strong>  {user.lastName  || '—'}</p>
             <p><strong>Email:</strong>      {user.email}</p>
-            <button
-              onClick={() => setEditing(true)}
-              className="mt-3 bg-blue-600 text-white px-4 py-2 rounded"
-            >
-              Edit Profile
-            </button>
+            <div className="mt-3 space-x-2">
+              <button
+                onClick={() => setEditing(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded"
+              >
+                Edit Profile
+              </button>
+              <button
+                onClick={() => setShowPasswordForm(prev => !prev)}
+                className="bg-indigo-600 text-white px-4 py-2 rounded"
+              >
+                Change Password
+              </button>
+            </div>
           </>
         )}
       </section>
+
+      {/* Password */}
+      {showPasswordForm && (
+        <section className="bg-white dark:bg-gray-800 p-4 rounded shadow">
+          <h2 className="text-xl font-bold mb-4">Change Password</h2>
+
+          {/* Old Password */}
+          <label className="block mb-2">
+            Old Password
+            <div className="flex items-center">
+              <input
+                type={showOld ? 'text' : 'password'}
+                value={passwordForm.oldPassword}
+                onChange={e => setPasswordForm({ ...passwordForm, oldPassword: e.target.value })}
+                className="dark:bg-gray-800 w-full border px-2 py-1 rounded"
+              />
+              <button
+                type="button"
+                className="ml-2 text-sm text-gray-500"
+                onClick={() => setShowOld(!showOld)}
+              >
+                {showOld ? '🙈' : '👁'}
+              </button>
+            </div>
+          </label>
+
+          {/* New Password */}
+          <label className="block mb-2">
+            New Password
+            <div className="flex items-center">
+              <input
+                type={showNew ? 'text' : 'password'}
+                value={passwordForm.newPassword}
+                onChange={e => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                className="dark:bg-gray-800 w-full border px-2 py-1 rounded"
+              />
+              <button
+                type="button"
+                className="ml-2 text-sm text-gray-500"
+                onClick={() => setShowNew(!showNew)}
+              >
+                {showNew ? '🙈' : '👁'}
+              </button>
+            </div>
+          </label>
+
+          {/* Confirm Password */}
+          <label className="block mb-4">
+            Confirm New Password
+            <div className="flex items-center">
+              <input
+                type={showConfirm ? 'text' : 'password'}
+                value={passwordForm.confirmPassword}
+                onChange={e => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                className="dark:bg-gray-800 w-full border px-2 py-1 rounded"
+              />
+              <button
+                type="button"
+                className="ml-2 text-sm text-gray-500"
+                onClick={() => setShowConfirm(!showConfirm)}
+              >
+                {showConfirm ? '🙈' : '👁'}
+              </button>
+            </div>
+          </label>
+
+          <button
+            onClick={changePassword}
+            className="bg-blue-600 text-white px-4 py-2 rounded"
+          >
+            Change Password
+          </button>
+        </section>
+      )}
 
       {/* Subscription */}
       <section className="bg-white dark:bg-gray-800 p-4 rounded shadow">
@@ -144,11 +200,7 @@ export default function UserDashboard() {
           </button>
         ) : (
           <button
-            onClick={() => {
-              api.post('/subscription/cancel')
-                .then(() => toast.success('Subscription cancelled'))
-                .catch(() => toast.error('Cancel failed'));
-            }}
+            onClick={cancelSubscription}
             className="mt-3 bg-red-600 text-white px-4 py-2 rounded"
           >
             Cancel Subscription
