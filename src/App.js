@@ -12,6 +12,7 @@ import api             from './api';
 export default function App() {
   const [darkMode,   setDarkMode]   = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [role,       setRole]       = useState(null);
 
   // On mount, pick up any existing JWT and then attempt silent refresh
   useEffect(() => {
@@ -31,11 +32,27 @@ export default function App() {
       });
   }, []);
 
+  // Whenever login state changes, fetch user's role
+  useEffect(() => {
+    if (isLoggedIn) {
+      api.get('/users/me')
+        .then(res => {
+          setRole(res.data.role);    // expects { role: 'user' | 'admin', ... }
+        })
+        .catch(() => {
+          setRole(null);
+        });
+    } else {
+      setRole(null);
+    }
+  }, [isLoggedIn]);
+
   const handleLogout = () => {
     api.post('/auth/logout')
       .finally(() => {
         localStorage.removeItem('token');
         setIsLoggedIn(false);
+        setRole(null);
         // redirect to login with a toast flag
         window.location.href = '/auth?loggedout=1';
       });
@@ -78,12 +95,15 @@ export default function App() {
                 </Link>
               )}
 
-              <Link
-                to="/admin"
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-sm rounded transition"
-              >
-                Admin
-              </Link>
+              {/* only show when admin */}
+              {role === 'admin' && (
+                <Link
+                  to="/admin"
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-sm rounded transition"
+                >
+                  Admin
+                </Link>
+              )}
 
               {isLoggedIn && (
                 <Link
@@ -93,7 +113,6 @@ export default function App() {
                   My Account
                 </Link>
               )}
-
             </div>
           </div>
         </header>

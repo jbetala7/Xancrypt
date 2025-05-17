@@ -10,8 +10,17 @@ const router = express.Router();
 
 // GET /api/users/me
 router.get('/me', authenticate, async (req, res) => {
-  const { firstName, lastName, email, active, subscription, filesEncrypted } = req.user;
-  res.json({ firstName, lastName, email, active, subscription, filesEncrypted });
+  // return only fields frontend needs, now including role
+  const {
+    firstName,
+    lastName,
+    email,
+    active,
+    subscription,
+    filesEncrypted,
+    role
+  } = req.user;
+  res.json({ firstName, lastName, email, active, subscription, filesEncrypted, role });
 });
 
 // PATCH /api/users/me
@@ -23,12 +32,14 @@ router.patch('/me', authenticate, async (req, res) => {
   res.json({ message: 'Profile updated' });
 });
 
-// POST /api/users/me/email
+// POST /api/users/me/email — change email + resend verification
 router.post('/me/email', authenticate, async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Email required' });
-  if (await User.exists({ email })) return res.status(409).json({ error: 'Email already in use' });
-
+  // ensure no dupes
+  if (await User.exists({ email })) {
+    return res.status(409).json({ error: 'Email already in use' });
+  }
   req.user.email = email;
   req.user.active = false;
   await req.user.save();
@@ -59,6 +70,10 @@ router.patch('/me/password', authenticate, async (req, res) => {
 
   const isMatch = await bcrypt.compare(oldPassword, req.user.passwordHash);
   if (!isMatch) return res.status(401).json({ error: 'Incorrect current password' });
+
+  // prevent reusing same password
+  const isSame = await bcrypt.compare(newPassword, req.user.passwordHash);
+  if (isSame) return res.status(400).json({ error: 'New password must differ from old' });
 
   req.user.passwordHash = await bcrypt.hash(newPassword, 10);
   await req.user.save();

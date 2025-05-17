@@ -27,8 +27,6 @@ router.post(
     encryptionDuration.reset();
     encryptionErrors.reset();
     lastConversionDuration.reset();
-    // register.clear();
-    // client.collectDefaultMetrics({ register });
     res.status(200).send('✅ Metrics have been reset');
   }
 );
@@ -41,16 +39,16 @@ router.delete(
   async (req, res) => {
     try {
       const { id } = req.params;
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ error: 'Invalid user ID' });
+      }
       const user = await User.findById(id);
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
       }
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        return res.status(400).json({ error: 'Invalid user ID' });
-      }
       await user.deleteOne();
-      // also clear usage
       await DeviceUsage.deleteMany({ userId: id });
+      await History.deleteOne({ userId: id });
       res.json({ message: 'User deleted successfully' });
     } catch (err) {
       console.error('Admin delete user error:', err);
@@ -69,11 +67,19 @@ router.get(
       const cutoff = Date.now() - 7 * 60 * 60 * 1000;
       const usages = await DeviceUsage.find().populate('userId', 'email');
       const summary = usages.map(u => {
+        // normalize IPv6 loopback to IPv4
+        let ip = u.ip;
+        if (ip === '::1') {
+          ip = '127.0.0.1';
+        } else if (ip.startsWith('::ffff:')) {
+          ip = ip.split('::ffff:')[1];
+        }
+
         const recent = u.records.filter(r => r.time.getTime() > cutoff);
         const total = recent.reduce((sum, r) => sum + r.files, 0);
         return {
           deviceId: u.deviceId,
-          ip: u.ip,
+          ip,
           userId: u.userId?._id || null,
           email: u.userId?.email || null,
           filesLast7h: total,
@@ -107,7 +113,7 @@ router.delete(
   }
 );
 
-// ─── NEW: SITE-WIDE SUMMARY ─────────────────────────────────────────────────────
+// ─── SITE-WIDE SUMMARY ─────────────────────────────────────────────────────────
 router.get(
   '/summary',
   authenticate,
@@ -119,7 +125,6 @@ router.get(
       const paidUsers = await User.countDocuments({ 'subscription.plan': { $ne: 'free' } });
       const pendingVerif = await User.countDocuments({ active: false });
 
-      // Sum all paid invoices (up to last 100 for example)
       const invoices = await stripe.invoices.list({ limit: 100 });
       const totalRevenue = invoices.data
         .filter(inv => inv.paid)
@@ -139,7 +144,7 @@ router.get(
   }
 );
 
-// ─── NEW: LIST USERS (with optional plan filter) ───────────────────────────────
+// ─── LIST USERS (with optional plan filter) ────────────────────────────────────
 router.get(
   '/users',
   authenticate,
@@ -151,21 +156,40 @@ router.get(
       if (plan === 'free') query['subscription.plan'] = 'free';
       if (plan === 'paid') query['subscription.plan'] = { $ne: 'free' };
 
+      // fetch basic user data
       const users = await User.find(query)
         .skip((page - 1) * perPage)
         .limit(Number(perPage))
         .lean();
 
-      // Attach total files encrypted
-      const withUsage = await Promise.all(users.map(async u => {
-        const usage = await DeviceUsage.findOne({ userId: u._id });
-        return {
-          ...u,
-          filesEncrypted: usage?.records?.reduce((s, r) => s + r.files, 0) || 0
-        };
-      }));
+      // enrich with usage & history
+      const withDetails = await Promise.all(
+        users.map(async u => {
+          // total files encrypted
+          const usage = await DeviceUsage.findOne({ userId: u._id });
+          const filesEncrypted = usage?.records?.reduce((s, r) => s + r.files, 0) || 0;
 
-      res.json(withUsage);
+          // fetch their encryption history events
+          const hist = await History.findOne({ userId: u._id }).lean();
+          const encryptionHistory = hist
+            ? hist.events.map(e => ({
+                timestamp: e.time,
+                cssCount:  e.cssCount,
+                jsCount:   e.jsCount,
+                link:      e.link,
+                filename:  e.filename
+              }))
+            : [];
+
+          return {
+            ...u,
+            filesEncrypted,
+            encryptionHistory
+          };
+        })
+      );
+
+      res.json(withDetails);
     } catch (err) {
       console.error('Admin list users error:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -173,10 +197,7 @@ router.get(
   }
 );
 
-// ─── NEW: UPDATE USER FIELDS ────────────────────────────────────────────────────
-8
-
-// ─── NEW: RESET A USER’S USAGE ─────────────────────────────────────────────────
+// ─── RESET A USER’S USAGE ───────────────────────────────────────────────────────
 router.post(
   '/users/:id/reset-usage',
   authenticate,
@@ -195,7 +216,7 @@ router.post(
   }
 );
 
-// ─── NEW: REVENUE TRENDS (MRR by Month) ─────────────────────────────────────────
+// ─── REVENUE TRENDS (MRR by Month) ─────────────────────────────────────────────
 router.get(
   '/revenue/trends',
   authenticate,
@@ -225,7 +246,7 @@ router.get(
   }
 );
 
-// ─── NEW: RECENT PAYMENTS ───────────────────────────────────────────────────────
+// ─── RECENT PAYMENTS ───────────────────────────────────────────────────────────
 router.get(
   '/revenue/recent',
   authenticate,
